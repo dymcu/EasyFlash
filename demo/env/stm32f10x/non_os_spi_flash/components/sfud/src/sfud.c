@@ -52,7 +52,6 @@ static const sfud_flash_chip flash_chip_table[] = SFUD_FLASH_CHIP_TABLE;
 
 static sfud_err software_init(const sfud_flash *flash);
 static sfud_err hardware_init(sfud_flash *flash);
-static sfud_err chip_erase(const sfud_flash *flash);
 static sfud_err page256_or_1_byte_write(const sfud_flash *flash, uint32_t addr, size_t size, uint16_t write_gran,
         const uint8_t *data);
 static sfud_err aai_write(const sfud_flash *flash, uint32_t addr, size_t size, const uint8_t *data);
@@ -68,37 +67,69 @@ extern void sfud_log_debug(const char *file, const long line, const char *format
 extern void sfud_log_info(const char *format, ...);
 
 /**
+ * SFUD initialize by flash device
+ *
+ * @param flash flash device
+ *
+ * @return result
+ */
+sfud_err sfud_device_init(sfud_flash *flash) {
+    sfud_err result = SFUD_SUCCESS;
+
+    /* hardware initialize */
+    result = hardware_init(flash);
+    if (result == SFUD_SUCCESS) {
+        result = software_init(flash);
+    }
+    if (result == SFUD_SUCCESS) {
+        flash->init_ok = true;
+        SFUD_INFO("%s flash device is initialize success.", flash->name);
+    } else {
+        flash->init_ok = false;
+        SFUD_INFO("Error: %s flash device is initialize fail.", flash->name);
+    }
+
+    return result;
+}
+
+/**
  * SFUD library initialize.
  *
  * @return result
  */
 sfud_err sfud_init(void) {
     sfud_err cur_flash_result = SFUD_SUCCESS, all_flash_result = SFUD_SUCCESS;
-    sfud_flash *flash;
+    size_t i;
 
     SFUD_DEBUG("Start initialize Serial Flash Universal Driver(SFUD) V%s.", SFUD_SW_VERSION);
+    SFUD_DEBUG("You can get the latest version on https://github.com/armink/SFUD .");
     /* initialize all flash device in flash device table */
-    for (size_t i = 0; i < sizeof(flash_table) / sizeof(sfud_flash); i++) {
-        cur_flash_result = SFUD_SUCCESS;
-        flash = &flash_table[i];
+    for (i = 0; i < sizeof(flash_table) / sizeof(sfud_flash); i++) {
         /* initialize flash device index of flash device information table */
-        flash->index = i;
-        /* hardware initialize */
-        cur_flash_result = hardware_init(flash);
-        if (cur_flash_result == SFUD_SUCCESS) {
-            cur_flash_result = software_init(flash);
-        }
-        if (cur_flash_result == SFUD_SUCCESS) {
-            flash->init_ok = true;
-            SFUD_INFO("%s flash device is initialize success.", flash->name);
-        } else {
+        flash_table[i].index = i;
+        cur_flash_result = sfud_device_init(&flash_table[i]);
+
+        if (cur_flash_result != SFUD_SUCCESS) {
             all_flash_result = cur_flash_result;
-            flash->init_ok = false;
-            SFUD_INFO("Error: %s flash device is initialize fail.", flash->name);
         }
     }
 
     return all_flash_result;
+}
+
+/**
+ * get flash device by its index which in the flash information table
+ *
+ * @param index the index which in the flash information table  @see flash_table
+ *
+ * @return flash device
+ */
+sfud_flash *sfud_get_device(size_t index) {
+    if (index < sfud_get_device_num()) {
+        return &flash_table[index];
+    } else {
+        return NULL;
+    }
 }
 
 /**
@@ -126,6 +157,7 @@ static sfud_err hardware_init(sfud_flash *flash) {
     extern sfud_err sfud_spi_port_init(sfud_flash *flash);
 
     sfud_err result = SFUD_SUCCESS;
+    size_t i;
 
     SFUD_ASSERT(flash);
 
@@ -160,7 +192,7 @@ static sfud_err hardware_init(sfud_flash *flash) {
             /* find the the smallest erase sector size for eraser. then will use this size for erase granularity */
             flash->chip.erase_gran = flash->sfdp.eraser[0].size;
             flash->chip.erase_gran_cmd = flash->sfdp.eraser[0].cmd;
-            for (size_t i = 1; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
+            for (i = 1; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
                 if (flash->sfdp.eraser[i].size != 0 && flash->chip.erase_gran > flash->sfdp.eraser[i].size) {
                     flash->chip.erase_gran = flash->sfdp.eraser[i].size;
                     flash->chip.erase_gran_cmd = flash->sfdp.eraser[i].cmd;
@@ -171,7 +203,7 @@ static sfud_err hardware_init(sfud_flash *flash) {
 
 #ifdef SFUD_USING_FLASH_INFO_TABLE
             /* read SFDP parameters failed then using SFUD library provided static parameter */
-            for (size_t i = 0; i < sizeof(flash_chip_table) / sizeof(sfud_flash_chip); i++) {
+            for (i = 0; i < sizeof(flash_chip_table) / sizeof(sfud_flash_chip); i++) {
                 if ((flash_chip_table[i].mf_id == flash->chip.mf_id)
                         && (flash_chip_table[i].type_id == flash->chip.type_id)
                         && (flash_chip_table[i].capacity_id == flash->chip.capacity_id)) {
@@ -198,7 +230,7 @@ static sfud_err hardware_init(sfud_flash *flash) {
     } else {
         const char *flash_mf_name = NULL;
         /* find the manufacturer information */
-        for (size_t i = 0; i < sizeof(mf_table) / sizeof(sfud_mf); i++) {
+        for (i = 0; i < sizeof(mf_table) / sizeof(sfud_mf); i++) {
             if (mf_table[i].id == flash->chip.mf_id) {
                 flash_mf_name = mf_table[i].name;
                 break;
@@ -306,7 +338,7 @@ sfud_err sfud_read(const sfud_flash *flash, uint32_t addr, size_t size, uint8_t 
  *
  * @return result
  */
-static sfud_err chip_erase(const sfud_flash *flash) {
+sfud_err sfud_chip_erase(const sfud_flash *flash) {
     sfud_err result = SFUD_SUCCESS;
     const sfud_spi *spi = &flash->spi;
     uint8_t cmd_data[4];
@@ -322,7 +354,7 @@ static sfud_err chip_erase(const sfud_flash *flash) {
     /* set the flash write enable */
     result = set_write_enabled(flash, true);
     if (result != SFUD_SUCCESS) {
-        goto exit;
+        goto __exit;
     }
 
     cmd_data[0] = SFUD_CMD_ERASE_CHIP;
@@ -337,11 +369,13 @@ static sfud_err chip_erase(const sfud_flash *flash) {
     }
     if (result != SFUD_SUCCESS) {
         SFUD_INFO("Error: Flash chip erase SPI communicate error.");
-        goto exit;
+        goto __exit;
     }
     result = wait_busy(flash);
 
-    exit:
+__exit:
+    /* set the flash write disable */
+    set_write_enabled(flash, false);
     /* unlock SPI */
     if (spi->unlock) {
         spi->unlock(spi);
@@ -362,7 +396,7 @@ static sfud_err chip_erase(const sfud_flash *flash) {
  * @return result
  */
 sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
-    extern size_t sfud_sfdp_get_suitable_eraser(const sfud_flash *flash, size_t erase_size);
+    extern size_t sfud_sfdp_get_suitable_eraser(const sfud_flash *flash, uint32_t addr, size_t erase_size);
 
     sfud_err result = SFUD_SUCCESS;
     const sfud_spi *spi = &flash->spi;
@@ -379,7 +413,7 @@ sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
     }
 
     if (addr == 0 && size == flash->chip.capacity) {
-        return chip_erase(flash);
+        return sfud_chip_erase(flash);
     }
 
     /* lock SPI */
@@ -393,7 +427,7 @@ sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
 #ifdef SFUD_USING_SFDP
         if (flash->sfdp.available) {
             /* get the suitable eraser for erase process from SFDP parameter */
-            eraser_index = sfud_sfdp_get_suitable_eraser(flash, size);
+            eraser_index = sfud_sfdp_get_suitable_eraser(flash, addr, size);
             cur_erase_cmd = flash->sfdp.eraser[eraser_index].cmd;
             cur_erase_size = flash->sfdp.eraser[eraser_index].size;
         } else {
@@ -406,7 +440,7 @@ sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
         /* set the flash write enable */
         result = set_write_enabled(flash, true);
         if (result != SFUD_SUCCESS) {
-            break;
+            goto __exit;
         }
 
         cmd_data[0] = cur_erase_cmd;
@@ -415,11 +449,11 @@ sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
         result = spi->wr(spi, cmd_data, cmd_size, NULL, 0);
         if (result != SFUD_SUCCESS) {
             SFUD_INFO("Error: Flash erase SPI communicate error.");
-            break;
+            goto __exit;
         }
         result = wait_busy(flash);
         if (result != SFUD_SUCCESS) {
-            break;
+            goto __exit;
         }
         /* make erase align and calculate next erase address */
         if (addr % cur_erase_size != 0) {
@@ -427,18 +461,21 @@ sfud_err sfud_erase(const sfud_flash *flash, uint32_t addr, size_t size) {
                 size -= cur_erase_size - (addr % cur_erase_size);
                 addr += cur_erase_size - (addr % cur_erase_size);
             } else {
-                break;
+                goto __exit;
             }
         } else {
             if (size > cur_erase_size) {
                 size -= cur_erase_size;
                 addr += cur_erase_size;
             } else {
-                break;
+                goto __exit;
             }
         }
     }
 
+__exit:
+    /* set the flash write disable */
+    set_write_enabled(flash, false);
     /* unlock SPI */
     if (spi->unlock) {
         spi->unlock(spi);
@@ -485,7 +522,7 @@ static sfud_err page256_or_1_byte_write(const sfud_flash *flash, uint32_t addr, 
         /* set the flash write enable */
         result = set_write_enabled(flash, true);
         if (result != SFUD_SUCCESS) {
-            break;
+            goto __exit;
         }
         cmd_data[0] = SFUD_CMD_PAGE_PROGRAM;
         make_adress_byte_array(flash, addr, &cmd_data[1]);
@@ -513,15 +550,18 @@ static sfud_err page256_or_1_byte_write(const sfud_flash *flash, uint32_t addr, 
         result = spi->wr(spi, cmd_data, cmd_size + data_size, NULL, 0);
         if (result != SFUD_SUCCESS) {
             SFUD_INFO("Error: Flash write SPI communicate error.");
-            break;
+            goto __exit;
         }
         result = wait_busy(flash);
         if (result != SFUD_SUCCESS) {
-            break;
+            goto __exit;
         }
         data += data_size;
     }
 
+__exit:
+    /* set the flash write disable */
+    set_write_enabled(flash, false);
     /* unlock SPI */
     if (spi->unlock) {
         spi->unlock(spi);
@@ -547,12 +587,9 @@ static sfud_err aai_write(const sfud_flash *flash, uint32_t addr, size_t size, c
     sfud_err result = SFUD_SUCCESS;
     const sfud_spi *spi = &flash->spi;
     uint8_t cmd_data[6], cmd_size;
-    const size_t data_size = 2;
     bool first_write = true;
 
     SFUD_ASSERT(flash);
-    SFUD_ASSERT(size >= 2);
-    /* must be call this function after initialize OK */
     SFUD_ASSERT(flash->init_ok);
     /* check the flash address bound */
     if (addr + size > flash->chip.capacity) {
@@ -563,58 +600,60 @@ static sfud_err aai_write(const sfud_flash *flash, uint32_t addr, size_t size, c
     if (spi->lock) {
         spi->lock(spi);
     }
-
+    /* The address must be even for AAI write mode. So it must write one byte first when address is odd. */
+    if (addr % 2 != 0) {
+        result = page256_or_1_byte_write(flash, addr++, 1, 1, data++);
+        if (result != SFUD_SUCCESS) {
+            goto __exit;
+        }
+        size--;
+    }
     /* set the flash write enable */
     result = set_write_enabled(flash, true);
     if (result != SFUD_SUCCESS) {
-        goto exit;
+        goto __exit;
     }
-    /* loop write operate. write unit is write granularity */
+    /* loop write operate. */
     cmd_data[0] = SFUD_CMD_AAI_WORD_PROGRAM;
-    while (size) {
+    while (size >= 2) {
         if (first_write) {
             make_adress_byte_array(flash, addr, &cmd_data[1]);
             cmd_size = flash->addr_in_4_byte ? 5 : 4;
-            if (addr % 2 == 0) {
-                cmd_data[cmd_size] = *data;
-                cmd_data[cmd_size + 1] = *(data + 1);
-            } else {
-                cmd_data[cmd_size] = 0xFF;
-                cmd_data[cmd_size + 1] = *data;
-                size++;
-                data--;
-            }
+            cmd_data[cmd_size] = *data;
+            cmd_data[cmd_size + 1] = *(data + 1);
             first_write = false;
         } else {
             cmd_size = 1;
-            if (size != 1) {
-                cmd_data[1] = *data;
-                cmd_data[2] = *(data + 1);
-            } else {
-                cmd_data[1] = *data;
-                cmd_data[2] = 0xFF;
-                size++;
-            }
+            cmd_data[1] = *data;
+            cmd_data[2] = *(data + 1);
         }
 
-        result = spi->wr(spi, cmd_data, cmd_size + data_size, NULL, 0);
+        result = spi->wr(spi, cmd_data, cmd_size + 2, NULL, 0);
         if (result != SFUD_SUCCESS) {
             SFUD_INFO("Error: Flash write SPI communicate error.");
-            goto exit;
+            goto __exit;
         }
 
         result = wait_busy(flash);
         if (result != SFUD_SUCCESS) {
-            goto exit;
+            goto __exit;
         }
 
         size -= 2;
-        data += data_size;
+        addr += 2;
+        data += 2;
     }
-    /* set the flash write disable */
+    /* set the flash write disable for exit AAI mode */
     result = set_write_enabled(flash, false);
+    /* write last one byte data when origin write size is odd */
+    if (result == SFUD_SUCCESS && size == 1) {
+        result = page256_or_1_byte_write(flash, addr, 1, 1, data);
+    }
 
-    exit:
+__exit:
+    if (result != SFUD_SUCCESS) {
+        set_write_enabled(flash, false);
+    }
     /* unlock SPI */
     if (spi->unlock) {
         spi->unlock(spi);
@@ -835,14 +874,14 @@ static sfud_err wait_busy(const sfud_flash *flash) {
 }
 
 static void make_adress_byte_array(const sfud_flash *flash, uint32_t addr, uint8_t *array) {
-    uint8_t len;
+    uint8_t len, i;
 
     SFUD_ASSERT(flash);
     SFUD_ASSERT(array);
 
     len = flash->addr_in_4_byte ? 4 : 3;
 
-    for (uint8_t i = 0; i < len; i++) {
+    for (i = 0; i < len; i++) {
         array[i] = (addr >> ((len - (i + 1)) * 8)) & 0xFF;
     }
 }

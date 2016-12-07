@@ -44,6 +44,15 @@ extern "C" {
 sfud_err sfud_init(void);
 
 /**
+ * get flash device by its index which in the flash information table
+ *
+ * @param index the index which in the flash information table  @see flash_table
+ *
+ * @return flash device
+ */
+sfud_flash *sfud_get_device(size_t index);
+
+/**
  * get flash device total number on flash device information table  @see flash_table
  *
  * @return flash device total number
@@ -105,6 +114,15 @@ sfud_err sfud_write(const sfud_flash *flash, uint32_t addr, size_t size, const u
  * @return result
  */
 sfud_err sfud_erase_write(const sfud_flash *flash, uint32_t addr, size_t size, const uint8_t *data);
+
+/**
+ * erase all flash data
+ *
+ * @param flash flash device
+ *
+ * @return result
+ */
+sfud_err sfud_chip_erase(const sfud_flash *flash);
 
 /**
  * read flash register status

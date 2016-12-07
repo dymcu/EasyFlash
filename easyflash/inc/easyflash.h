@@ -1,7 +1,7 @@
 /*
  * This file is part of the EasyFlash Library.
  *
- * Copyright (c) 2014, Armink, <armink.ztl@gmail.com>
+ * Copyright (c) 2014-2016, Armink, <armink.ztl@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -67,7 +67,7 @@ if (!(EXPR))                                                                  \
     while (1);                                                                \
 }
 /* EasyFlash software version number */
-#define EF_SW_VERSION                "2.07.28"
+#define EF_SW_VERSION                "2.11.24"
 
 typedef struct _ef_env{
     char *key;
@@ -82,21 +82,22 @@ typedef enum {
     EF_ENV_NAME_ERR,
     EF_ENV_NAME_EXIST,
     EF_ENV_FULL,
+    EF_ENV_INIT_FAILED,
 } EfErrCode;
 
 /* the flash sector current status */
 typedef enum {
-    FLASH_SECTOR_EMPTY,
-    FLASH_SECTOR_USING,
-    FLASH_SECTOR_FULL,
-}FlashSecrorStatus;
+    EF_SECTOR_EMPTY,
+    EF_SECTOR_USING,
+    EF_SECTOR_FULL,
+}EfSecrorStatus;
 
 /* easyflash.c */
 EfErrCode easyflash_init(void);
 
 #ifdef EF_USING_ENV
 /* ef_env.c ef_env_wl.c */
-void ef_load_env(void);
+EfErrCode ef_load_env(void);
 void ef_print_env(void);
 char *ef_get_env(const char *key);
 EfErrCode ef_set_env(const char *key, const char *value);
@@ -127,7 +128,7 @@ size_t ef_log_get_used_size(void);
 
 /* ef_utils.c */
 uint32_t ef_calc_crc32(uint32_t crc, const void *buf, size_t size);
-FlashSecrorStatus ef_get_sector_status(uint32_t addr, size_t sec_size);
+EfSecrorStatus ef_get_sector_status(uint32_t addr, size_t sec_size);
 uint32_t ef_find_sec_using_end_addr(uint32_t addr, size_t sec_size);
 
 /* ef_port.c */

@@ -46,9 +46,10 @@
 
 /* support maximum SFDP major revision by driver */
 #define SUPPORT_MAX_SFDP_MAJOR_REV                  1
-/* The JEDEC basic flash parameter table length is 9 DWORDs (288-bit) on JESD216 (V1.0) initial release standard */
+/* the JEDEC basic flash parameter table length is 9 DWORDs (288-bit) on JESD216 (V1.0) initial release standard */
 #define BASIC_TABLE_LEN                             9
-
+/* the smallest eraser in SFDP eraser table */
+#define SMALLEST_ERASER_INDEX                       0
 /**
  *  SFDP parameter header structure
  */
@@ -104,8 +105,6 @@ static bool read_sfdp_header(sfud_flash *flash) {
     uint32_t header_addr = 0;
     /* each parameter header being 2 DWORDs (64-bit) */
     uint8_t header[2 * 4] = { 0 };
-    /* number of parameter headers */
-    uint8_t npn = 0;
 
     SFUD_ASSERT(flash);
 
@@ -125,12 +124,12 @@ static bool read_sfdp_header(sfud_flash *flash) {
     }
     sfdp->minor_rev = header[4];
     sfdp->major_rev = header[5];
-    npn = header[6];
     if (sfdp->major_rev > SUPPORT_MAX_SFDP_MAJOR_REV) {
         SFUD_INFO("Error: This reversion(V%d.%d) SFDP is not supported.", sfdp->major_rev, sfdp->minor_rev);
         return false;
     }
-    SFUD_DEBUG("Check SFDP header is OK. The reversion is V%d.%d, NPN is %d.", sfdp->major_rev, sfdp->minor_rev, npn);
+    SFUD_DEBUG("Check SFDP header is OK. The reversion is V%d.%d, NPN is %d.", sfdp->major_rev, sfdp->minor_rev,
+            header[6]);
 
     return true;
 }
@@ -190,7 +189,7 @@ static bool read_basic_table(sfud_flash *flash, sfdp_para_header *basic_header) 
     /* parameter table address */
     uint32_t table_addr = basic_header->ptp;
     /* parameter table */
-    uint8_t table[BASIC_TABLE_LEN * 4] = { 0 };
+    uint8_t table[BASIC_TABLE_LEN * 4] = { 0 }, i, j;
 
     SFUD_ASSERT(flash);
     SFUD_ASSERT(basic_header);
@@ -203,7 +202,7 @@ static bool read_basic_table(sfud_flash *flash, sfdp_para_header *basic_header) 
     /* print JEDEC basic flash parameter table info */
     SFUD_DEBUG("JEDEC basic flash parameter table info:");
     SFUD_DEBUG("MSB-LSB  3    2    1    0");
-    for (uint8_t i = 0; i < BASIC_TABLE_LEN; i++) {
+    for (i = 0; i < BASIC_TABLE_LEN; i++) {
         SFUD_DEBUG("[%04d] 0x%02X 0x%02X 0x%02X 0x%02X", i + 1, table[i * 4 + 3], table[i * 4 + 2], table[i * 4 + 1],
                 table[i * 4]);
     }
@@ -305,13 +304,29 @@ static bool read_basic_table(sfud_flash *flash, sfdp_para_header *basic_header) 
     }
     SFUD_DEBUG("Capacity is %ld Bytes.", sfdp->capacity);
     /* get erase size and erase command  */
-    for (uint8_t i = 0, j = 0; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
+    for (i = 0, j = 0; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
         if (table[28 + 2 * i] != 0x00) {
             sfdp->eraser[j].size = 1 << table[28 + 2 * i];
             sfdp->eraser[j].cmd = table[28 + 2 * i + 1];
             SFUD_DEBUG("Flash device supports %ldKB block erase. Command is 0x%02X.", sfdp->eraser[j].size / 1024,
                     sfdp->eraser[j].cmd);
             j++;
+        }
+    }
+    /* sort the eraser size from small to large */
+    for (i = 0, j = 0; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
+        if (sfdp->eraser[i].size) {
+            for (j = i + 1; j < SFUD_SFDP_ERASE_TYPE_MAX_NUM; j++) {
+                if (sfdp->eraser[j].size != 0 && sfdp->eraser[i].size > sfdp->eraser[j].size) {
+                    /* swap the small eraser */
+                    uint32_t temp_size = sfdp->eraser[i].size;
+                    uint8_t temp_cmd = sfdp->eraser[i].cmd;
+                    sfdp->eraser[i].size = sfdp->eraser[j].size;
+                    sfdp->eraser[i].cmd = sfdp->eraser[j].cmd;
+                    sfdp->eraser[j].size = temp_size;
+                    sfdp->eraser[j].cmd = temp_cmd;
+                }
+            }
         }
     }
 
@@ -337,32 +352,33 @@ static sfud_err read_sfdp_data(const sfud_flash *flash, uint32_t addr, uint8_t *
 }
 
 /**
- * get the suitable eraser for erase process from SFDP parameter
+ * get the most suitable eraser for erase process from SFDP parameter
  *
  * @param flash flash device
+ * @param addr start address
  * @param erase_size will be erased size
  *
  * @return the eraser index of SFDP eraser table  @see sfud_sfdp.eraser[]
  */
-size_t sfud_sfdp_get_suitable_eraser(const sfud_flash *flash, size_t erase_size) {
-    size_t i, index = 0;
-    bool find_ok = false;
-    /* find an suitable eraser which size is less than and closest to erase size */
-    for (i = 0; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
-        if (flash->sfdp.eraser[i].size != 0 && erase_size >= flash->sfdp.eraser[i].size
-                && flash->sfdp.eraser[i].size >= flash->sfdp.eraser[index].size) {
-            index = i;
-            find_ok = true;
-        }
+size_t sfud_sfdp_get_suitable_eraser(const sfud_flash *flash, uint32_t addr, size_t erase_size) {
+    size_t index = SMALLEST_ERASER_INDEX, i;
+    /* only used when flash supported SFDP */
+    SFUD_ASSERT(flash->sfdp.available);
+    /* the address isn't align by smallest eraser's size, then use the smallest eraser */
+    if (addr % flash->sfdp.eraser[SMALLEST_ERASER_INDEX].size) {
+        return SMALLEST_ERASER_INDEX;
     }
-    /* erase size is lass than all eraser size then used smallest eraser */
-    if (!find_ok) {
-        index = 0;
-        /* find the smallest erase size for eraser */
-        for (i = 0; i < SFUD_SFDP_ERASE_TYPE_MAX_NUM; i++) {
-            if (flash->sfdp.eraser[i].size != 0 && flash->sfdp.eraser[index].size > flash->sfdp.eraser[i].size) {
-                index = i;
-            }
+    /* Find the suitable eraser.
+     * The largest size eraser is at the end of eraser table.
+     * In order to decrease erase command counts, so the find process is from the end of eraser table. */
+    for (i = SFUD_SFDP_ERASE_TYPE_MAX_NUM - 1;; i--) {
+        if ((flash->sfdp.eraser[i].size != 0) && (erase_size >= flash->sfdp.eraser[i].size)
+                && (addr % flash->sfdp.eraser[i].size == 0)) {
+            index = i;
+            break;
+        }
+        if (i == SMALLEST_ERASER_INDEX) {
+            break;
         }
     }
     return index;
