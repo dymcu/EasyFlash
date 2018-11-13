@@ -276,30 +276,30 @@ static uint32_t stm32_get_sector_size(uint32_t sector) {
     EF_ASSERT(IS_FLASH_SECTOR(sector));
 
     switch (sector) {
-    case 0: return 16 * 1024;
-    case 1: return 16 * 1024;
-    case 2: return 16 * 1024;
-    case 3: return 16 * 1024;
-    case 4: return 64 * 1024;
-    case 5: return 128 * 1024;
-    case 6: return 128 * 1024;
-    case 7: return 128 * 1024;
-    case 8: return 128 * 1024;
-    case 9: return 128 * 1024;
-    case 10: return 128 * 1024;
-    case 11: return 128 * 1024;
-    case 12: return 16 * 1024;
-    case 13: return 16 * 1024;
-    case 14: return 16 * 1024;
-    case 15: return 16 * 1024;
-    case 16: return 64 * 1024;
-    case 17: return 128 * 1024;
-    case 18: return 128 * 1024;
-    case 19: return 128 * 1024;
-    case 20: return 128 * 1024;
-    case 21: return 128 * 1024;
-    case 22: return 128 * 1024;
-    case 23: return 128 * 1024;
+    case FLASH_Sector_0: return 16 * 1024;
+    case FLASH_Sector_1: return 16 * 1024;
+    case FLASH_Sector_2: return 16 * 1024;
+    case FLASH_Sector_3: return 16 * 1024;
+    case FLASH_Sector_4: return 64 * 1024;
+    case FLASH_Sector_5: return 128 * 1024;
+    case FLASH_Sector_6: return 128 * 1024;
+    case FLASH_Sector_7: return 128 * 1024;
+    case FLASH_Sector_8: return 128 * 1024;
+    case FLASH_Sector_9: return 128 * 1024;
+    case FLASH_Sector_10: return 128 * 1024;
+    case FLASH_Sector_11: return 128 * 1024;
+    case FLASH_Sector_12: return 16 * 1024;
+    case FLASH_Sector_13: return 16 * 1024;
+    case FLASH_Sector_14: return 16 * 1024;
+    case FLASH_Sector_15: return 16 * 1024;
+    case FLASH_Sector_16: return 64 * 1024;
+    case FLASH_Sector_17: return 128 * 1024;
+    case FLASH_Sector_18: return 128 * 1024;
+    case FLASH_Sector_19: return 128 * 1024;
+    case FLASH_Sector_20: return 128 * 1024;
+    case FLASH_Sector_21: return 128 * 1024;
+    case FLASH_Sector_22: return 128 * 1024;
+    case FLASH_Sector_23: return 128 * 1024;
     default : return 128 * 1024;
     }
 }
@@ -368,10 +368,9 @@ void ef_print(const char *format, ...) {
 #if defined(RT_USING_FINSH) && defined(FINSH_USING_MSH)
 #include <finsh.h>
 #if defined(EF_USING_ENV)
-void setenv(uint8_t argc, char **argv) {
+static void setenv(uint8_t argc, char **argv) {
     uint8_t i;
-    char c_value = NULL;
-    char *value = &c_value;
+
     if (argc > 3) {
         /* environment variable value string together */
         for (i = 0; i < argc - 2; i++) {
@@ -379,26 +378,26 @@ void setenv(uint8_t argc, char **argv) {
         }
     }
     if (argc == 1) {
-        ef_set_env(value, value);
+        rt_kprintf("Please input: setenv <key> [value]\n");
     } else if (argc == 2) {
-        ef_set_env(argv[1], value);
+        ef_set_env(argv[1], NULL);
     } else {
         ef_set_env(argv[1], argv[2]);
     }
 }
 MSH_CMD_EXPORT(setenv, Set an envrionment variable.);
 
-void printenv(uint8_t argc, char **argv) {
+static void printenv(uint8_t argc, char **argv) {
     ef_print_env();
 }
 MSH_CMD_EXPORT(printenv, Print all envrionment variables.);
 
-void saveenv(uint8_t argc, char **argv) {
+static void saveenv(uint8_t argc, char **argv) {
     ef_save_env();
 }
 MSH_CMD_EXPORT(saveenv, Save all envrionment variables to flash.);
 
-void getvalue(uint8_t argc, char **argv) {
+static void getvalue(uint8_t argc, char **argv) {
     char *value = NULL;
     value = ef_get_env(argv[1]);
     if (value) {
@@ -409,7 +408,7 @@ void getvalue(uint8_t argc, char **argv) {
 }
 MSH_CMD_EXPORT(getvalue, Get an envrionment variable by name.);
 
-void resetenv(uint8_t argc, char **argv) {
+static void resetenv(uint8_t argc, char **argv) {
     ef_env_set_default();
 }
 MSH_CMD_EXPORT(resetenv, Reset all envrionment variable to default.);

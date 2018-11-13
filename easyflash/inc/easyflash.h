@@ -1,7 +1,7 @@
 /*
  * This file is part of the EasyFlash Library.
  *
- * Copyright (c) 2014-2017, Armink, <armink.ztl@gmail.com>
+ * Copyright (c) 2014-2018, Armink, <armink.ztl@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -40,19 +40,19 @@ extern "C" {
 #endif
 
 #if defined(EF_USING_ENV) && (!defined(ENV_USER_SETTING_SIZE) || !defined(ENV_AREA_SIZE))
-    #error "Please configure user setting ENV size or ENV area size (in ef_cfg.h)"
+#error "Please configure user setting ENV size or ENV area size (in ef_cfg.h)"
 #endif
 
 #if defined(EF_USING_LOG) && !defined(LOG_AREA_SIZE)
-    #error "Please configure log area size (in ef_cfg.h)"
+#error "Please configure log area size (in ef_cfg.h)"
 #endif
 
 #if !defined(EF_START_ADDR)
-    #error "Please configure backup area start address (in ef_cfg.h)"
+#error "Please configure backup area start address (in ef_cfg.h)"
 #endif
 
 #if !defined(EF_ERASE_MIN_SIZE)
-    #error "Please configure minimum size of flash erasure (in ef_cfg.h)"
+#error "Please configure minimum size of flash erasure (in ef_cfg.h)"
 #endif
 
 /* EasyFlash debug print function. Must be implement by user. */
@@ -66,18 +66,29 @@ if (!(EXPR))                                                                  \
     EF_DEBUG("(%s) has assert failed at %s.\n", #EXPR, __FUNCTION__);         \
     while (1);                                                                \
 }
-/* EasyFlash software version number */
-#define EF_SW_VERSION                "3.0.0"
 
-typedef struct _ef_env{
+/**
+ * ENV version number defined by user.
+ * Please change it when your firmware add a new ENV to default_env_set.
+ */
+#ifndef EF_ENV_VER_NUM
+#define EF_ENV_VER_NUM                 0
+#endif
+
+/* EasyFlash software version number */
+#define EF_SW_VERSION                  "3.2.3"
+#define EF_SW_VERSION_NUM              0x30203
+
+typedef struct _ef_env {
     char *key;
     char *value;
-}ef_env, *ef_env_t;
+} ef_env, *ef_env_t;
 
 /* EasyFlash error code */
 typedef enum {
     EF_NO_ERR,
     EF_ERASE_ERR,
+    EF_READ_ERR,
     EF_WRITE_ERR,
     EF_ENV_NAME_ERR,
     EF_ENV_NAME_EXIST,
@@ -90,7 +101,7 @@ typedef enum {
     EF_SECTOR_EMPTY,
     EF_SECTOR_USING,
     EF_SECTOR_FULL,
-}EfSecrorStatus;
+} EfSecrorStatus;
 
 /* easyflash.c */
 EfErrCode easyflash_init(void);
@@ -101,21 +112,28 @@ EfErrCode ef_load_env(void);
 void ef_print_env(void);
 char *ef_get_env(const char *key);
 EfErrCode ef_set_env(const char *key, const char *value);
+EfErrCode ef_del_env(const char *key);
 EfErrCode ef_save_env(void);
 EfErrCode ef_env_set_default(void);
 size_t ef_get_env_write_bytes(void);
 EfErrCode ef_set_and_save_env(const char *key, const char *value);
+EfErrCode ef_del_and_save_env(const char *key);
 #endif
 
 #ifdef EF_USING_IAP
 /* ef_iap.c */
 EfErrCode ef_erase_bak_app(size_t app_size);
 EfErrCode ef_erase_user_app(uint32_t user_app_addr, size_t user_app_size);
+EfErrCode ef_erase_spec_user_app(uint32_t user_app_addr, size_t app_size,
+                                 EfErrCode (*app_erase)(uint32_t addr, size_t size));
 EfErrCode ef_erase_bl(uint32_t bl_addr, size_t bl_size);
 EfErrCode ef_write_data_to_bak(uint8_t *data, size_t size, size_t *cur_size,
-        size_t total_size);
+                               size_t total_size);
 EfErrCode ef_copy_app_from_bak(uint32_t user_app_addr, size_t app_size);
+EfErrCode ef_copy_spec_app_from_bak(uint32_t user_app_addr, size_t app_size,
+                                    EfErrCode (*app_write)(uint32_t addr, const uint32_t *buf, size_t size));
 EfErrCode ef_copy_bl_from_bak(uint32_t bl_addr, size_t bl_size);
+uint32_t ef_get_bak_app_start_addr(void);
 #endif
 
 #ifdef EF_USING_LOG
